@@ -12,7 +12,8 @@ categories = ["Science"]
 edition = "2018"
 
 [dependencies]
-nom = "5.0.0"
+log = "0.4"
+#nom = "5.0.0"
 
 [profile.release]
 lto = true
