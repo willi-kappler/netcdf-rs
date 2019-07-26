@@ -1,0 +1,18 @@
+[package]
+name = "netCDF-rs"
+version = "0.1.0"
+authors = ["Willi Kappler <grandor@gmx.de>"]
+license = "MIT"
+repository = "https://github.com/willi-kappler/netCDF-rs"
+description = "netCDT format support for Rust"
+readme = "README.md"
+exclude = ["target"]
+keywords = ["netCDF", "nc", "CDF"]
+categories = ["Science"]
+edition = "2018"
+
+[dependencies]
+nom = "5.0.0"
+
+[profile.release]
+lto = true
