@@ -9,21 +9,31 @@ use std::string::FromUtf8Error;
 
 // External modules
 use log::{info, debug, error};
-// use byteorder::{ReadBytesExt, WriteBytesExt, BigEndian, LittleEndian};
+use byteorder::{ByteOrder, BigEndian};
 
 
 // The netCDF format is described here:
 // https://www.unidata.ucar.edu/software/netcdf/docs/file_format_specifications.html
 
 
+type OneByte = [u8; 1];
+type TwoBytes = [u8; 2];
 type FourBytes = [u8; 4];
 type EightBytes = [u8; 8];
 
 const STREAMING: FourBytes = [0xff, 0xff, 0xff, 0xff];
 const ZERO: FourBytes = [0x00, 0x00, 0x00, 0x00];
+
 const NC_DIMENSION: FourBytes = [0x00, 0x00, 0x00, 0x0a];
 const NC_VARIABLE: FourBytes = [0x00, 0x00, 0x00, 0x0b];
 const NC_ATTRIBUTE: FourBytes = [0x00, 0x00, 0x00, 0x0c];
+
+const NC_BYTE: FourBytes = [0x00, 0x00, 0x00, 0x01];
+const NC_CHAR: FourBytes = [0x00, 0x00, 0x00, 0x02];
+const NC_SHORT: FourBytes = [0x00, 0x00, 0x00, 0x03];
+const NC_INT: FourBytes = [0x00, 0x00, 0x00, 0x04];
+const NC_FLOAT: FourBytes = [0x00, 0x00, 0x00, 0x05];
+const NC_DOUBLE: FourBytes = [0x00, 0x00, 0x00, 0x06];
 
 pub struct NetCDF {
     version: NetCDFVersion,
@@ -65,13 +75,13 @@ pub enum NetCDFType {
 }
 
 #[derive(Debug)]
-pub enum NetCDFValues {
-    Bytes(Vec<u8>),
-    Chars(Vec<char>),
-    Shorts(Vec<i16>),
-    Ints(Vec<i16>),
-    Floats(Vec<f32>),
-    Doubles(Vec<f64>),
+pub enum NetCDFValue {
+    Byte(u8),
+    Char(char),
+    Short(i16),
+    Int(i32),
+    Float(f32),
+    Double(f64),
 }
 
 #[derive(Debug)]
@@ -84,7 +94,7 @@ pub struct NetCDFDimension {
 pub struct NetCDFAttribute {
     name: String,
     nc_type: NetCDFType,
-    values: Vec<NetCDFValues>,
+    values: Vec<NetCDFValue>,
 }
 
 #[derive(Debug)]
@@ -104,7 +114,7 @@ pub struct NetCDFData {
 
 #[derive(Debug)]
 pub struct NetCDFVarData {
-    values: Vec<NetCDFValues>,
+    values: Vec<NetCDFValue>,
 }
 
 #[derive(Debug)]
@@ -114,15 +124,17 @@ pub struct NetCDFRecord {
 
 #[derive(Debug)]
 pub struct NetCDFVarSlab {
-    varslab: Vec<NetCDFValues>,
+    varslab: Vec<NetCDFValue>,
 }
 
 #[derive(Debug)]
 pub enum NetCDFError {
     IOError(io::Error),
     UnknownVersion(FourBytes),
-    DimListTag((FourBytes, FourBytes)),
     FromUtf8(FromUtf8Error),
+    DimListTag((FourBytes, FourBytes)),
+    AttrListTag((FourBytes, FourBytes)),
+    NCType(FourBytes),
 }
 
 
@@ -152,8 +164,14 @@ impl Display for NetCDFError {
             NetCDFError::DimListTag((t1, t2)) => {
                 write!(formatter, "Unknown tag in dim_list: {:x?}, {:x?}", t1, t2)
             }
+            NetCDFError::AttrListTag((t1, t2)) => {
+                write!(formatter, "Unknown tag in attr_list: {:x?}, {:x?}", t1, t2)
+            }
             NetCDFError::FromUtf8(e) => {
                 write!(formatter, "Could not convert to String: {}", e)
+            }
+            NetCDFError::NCType(t) => {
+                write!(formatter, "Unknown NetCDF type: {:x?}", t)
             }
         }
     }
@@ -179,7 +197,7 @@ impl NetCDF {
 
         let data = read_data(&mut buf_reader)?;
 
-        let result = NetCDF {
+        let result = NetCDF{
             version,
             numrecs,
             dim_list,
@@ -250,18 +268,9 @@ fn read_dim_list<T: Read>(reader: &mut T) -> Result<Vec<NetCDFDimension>, NetCDF
             let nelem = u32::from_be_bytes(buffer2);
             debug!("Nelems dimlist BE: {}", nelem);
 
-            let mut buffer3: FourBytes = [0; 4];
-
-            for i in 0..nelem {
-                reader.read_exact(&mut buffer3)?;
-                let name_length = u32::from_be_bytes(buffer3);
-                let name = read_name(name_length, reader)?;
-                reader.read_exact(&mut buffer3)?;
-                let dim_length = u32::from_be_bytes(buffer3);
-                result.push(NetCDFDimension {
-                    name,
-                    dim_length,
-                });
+            for _ in 0..nelem {
+                let dimension = read_dimension(reader)?;
+                result.push(dimension);
             }
 
             Ok(result)
@@ -274,12 +283,39 @@ fn read_dim_list<T: Read>(reader: &mut T) -> Result<Vec<NetCDFDimension>, NetCDF
 
 fn read_att_list<T: Read>(reader: &mut T) -> Result<Vec<NetCDFAttribute>, NetCDFError> {
     let mut result = Vec::new();
+    let mut buffer1: FourBytes = [0; 4];
+    let mut buffer2: FourBytes = [0; 4];
+    reader.read_exact(&mut buffer1)?;
+    reader.read_exact(&mut buffer2)?;
+    debug!("Attlist buffer1: {:?}", buffer1);
+    debug!("Attlist buffer2: {:?}", buffer2);
 
-    Ok(result)
+    match (buffer1, buffer2) {
+        (ZERO, ZERO) => {
+            // No attributes given, return empty vector
+            Ok(result)
+        }
+        (NC_ATTRIBUTE, _) => {
+            let nelem = u32::from_be_bytes(buffer2);
+            debug!("Nelems attlist BE: {}", nelem);
+
+            for _ in 0..nelem {
+                let attribute = read_attribute(reader)?;
+                result.push(attribute);
+            }
+
+            Ok(result)
+        }
+        _ => {
+            Err(NetCDFError::AttrListTag((buffer1, buffer2)))
+        }
+    }
 }
 
 fn read_var_list<T: Read>(reader: &mut T) -> Result<Vec<NetCDFVariable>, NetCDFError> {
     let mut result = Vec::new();
+
+    // TODO: implement
 
     Ok(result)
 }
@@ -287,12 +323,150 @@ fn read_var_list<T: Read>(reader: &mut T) -> Result<Vec<NetCDFVariable>, NetCDFE
 fn read_data<T: Read>(reader: &mut T) -> Result<Vec<NetCDFData>, NetCDFError> {
     let mut result = Vec::new();
 
+    // TODO: implement
+
     Ok(result)
 }
 
-fn read_name<T: Read>(name_length: u32, reader: &mut T) -> Result<String, NetCDFError> {
+fn read_name<T: Read>(reader: &mut T) -> Result<String, NetCDFError> {
+    let mut buffer1: FourBytes = [0; 4];
+    reader.read_exact(&mut buffer1)?;
+    let name_length = u32::from_be_bytes(buffer1);
+
     let mut reader2 = reader.by_ref();
-    let mut buffer = Vec::new();
-    reader2.take(name_length as u64).read_to_end(&mut buffer)?;
-    String::from_utf8(buffer).map_err(|e| NetCDFError::FromUtf8(e))
+    let mut buffer2 = Vec::new();
+    reader2.take(name_length as u64).read_to_end(&mut buffer2)?;
+    String::from_utf8(buffer2).map_err(|e| NetCDFError::FromUtf8(e))
+}
+
+fn read_number_of_elements<T: Read>(reader: &mut T) -> Result<u32, NetCDFError> {
+    let mut buffer: FourBytes = [0; 4];
+    reader.read_exact(&mut buffer)?;
+    let result = u32::from_be_bytes(buffer);
+    Ok(result)
+}
+
+fn read_nc_type<T: Read>(reader: &mut T) -> Result<NetCDFType, NetCDFError> {
+    let mut buffer: FourBytes = [0; 4];
+    reader.read_exact(&mut buffer)?;
+
+    match buffer {
+        NC_BYTE => Ok(NetCDFType::NCByte),
+        NC_CHAR => Ok(NetCDFType::NCChar),
+        NC_SHORT => Ok(NetCDFType::NCShort),
+        NC_INT => Ok(NetCDFType::NCInt),
+        NC_FLOAT => Ok(NetCDFType::NCFloat),
+        NC_DOUBLE => Ok(NetCDFType::NCDouble),
+        _ => Err(NetCDFError::NCType(buffer)),
+    }
+}
+
+fn read_values<T: Read>(reader: &mut T, nc_type: &NetCDFType, nvals: u32) -> Result<Vec<NetCDFValue>, NetCDFError> {
+    let mut result = Vec::new();
+
+    match nc_type {
+        NetCDFType::NCByte => {
+            let size_in_bytes = nvals;
+            let padding = size_in_bytes % 4;
+
+            let mut buffer: OneByte = [0; 1];
+
+            for _ in 0..nvals {
+                reader.read_exact(&mut buffer)?;
+                result.push(NetCDFValue::Byte(buffer[0]))
+            }
+
+            for _ in 0..padding {
+                // Ignore padding fill bytes
+                reader.read_exact(&mut buffer)?;
+            }
+
+            Ok(result)
+        }
+        NetCDFType::NCChar => {
+            let size_in_bytes = nvals;
+            let padding = size_in_bytes % 4;
+
+            let mut buffer: OneByte = [0; 1];
+
+            for _ in 0..nvals {
+                reader.read_exact(&mut buffer)?;
+                result.push(NetCDFValue::Char(buffer[0] as char))
+            }
+
+            for _ in 0..padding {
+                // Ignore padding fill bytes
+                reader.read_exact(&mut buffer)?;
+            }
+
+            Ok(result)
+        }
+        NetCDFType::NCShort => {
+            let size_in_bytes = nvals * 2;
+            let padding = size_in_bytes % 4;
+
+            let mut buffer: TwoBytes = [0; 2];
+
+            for _ in 0..nvals {
+                reader.read_exact(&mut buffer)?;
+                result.push(NetCDFValue::Short(i16::from_be_bytes(buffer)))
+            }
+
+            if padding == 2 {
+                // Ignore padding fill bytes
+                // Padding can only be 0 or 2
+                // and if it is 2 ready exactly 2 bytes.
+                // Buffer size is also 2
+                reader.read_exact(&mut buffer)?;
+            }
+
+            Ok(result)
+        }
+        NetCDFType::NCInt => {
+            let mut buffer: FourBytes = [0; 4];
+
+            for _ in 0..nvals {
+                reader.read_exact(&mut buffer)?;
+                result.push(NetCDFValue::Int(i32::from_be_bytes(buffer)))
+            }
+
+            Ok(result)
+        }
+        NetCDFType::NCFloat => {
+            let mut buffer: FourBytes = [0; 4];
+
+            for _ in 0..nvals {
+                reader.read_exact(&mut buffer)?;
+                result.push(NetCDFValue::Float(BigEndian::read_f32(&buffer)))
+            }
+
+            Ok(result)
+        }
+        NetCDFType::NCDouble => {
+            let mut buffer: EightBytes = [0; 8];
+
+            for _ in 0..nvals {
+                reader.read_exact(&mut buffer)?;
+                result.push(NetCDFValue::Double(BigEndian::read_f64(&buffer)))
+            }
+
+            Ok(result)
+        }
+    }
+}
+
+fn read_dimension<T: Read>(reader: &mut T) -> Result<NetCDFDimension, NetCDFError> {
+    let name = read_name(reader)?;
+    let dim_length = read_number_of_elements(reader)?;
+    let result = NetCDFDimension{name, dim_length};
+    Ok(result)
+}
+
+fn read_attribute<T: Read>(reader: &mut T) -> Result<NetCDFAttribute, NetCDFError> {
+    let name = read_name(reader)?;
+    let nc_type = read_nc_type(reader)?;
+    let nvals = read_number_of_elements(reader)?;
+    let values = read_values(reader, &nc_type, nvals)?;
+    let result = NetCDFAttribute{name, nc_type, values};
+    Ok(result)
 }
