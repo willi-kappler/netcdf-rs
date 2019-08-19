@@ -55,7 +55,6 @@ impl Display for NetCDF {
 pub enum NetCDFVersion {
     CDF01,
     CDF02,
-    Unknown,
 }
 
 #[derive(Debug)]
@@ -103,7 +102,14 @@ pub struct NetCDFVariable {
     dimid: Vec<u32>,
     att_list: Vec<NetCDFAttribute>,
     nc_type: NetCDFType,
-    id: usize,
+    vsize: u32,
+    offset: NetCDFOffset,
+}
+
+#[derive(Debug)]
+pub enum NetCDFOffset {
+    Pos32(u32),
+    Pos64(u64),
 }
 
 #[derive(Debug)]
@@ -193,7 +199,7 @@ impl NetCDF {
 
         let att_list = read_att_list(&mut buf_reader)?;
 
-        let var_list = read_var_list(&mut buf_reader)?;
+        let var_list = read_var_list(&mut buf_reader, &version)?;
 
         let data = read_data(&mut buf_reader)?;
 
@@ -312,12 +318,35 @@ fn read_att_list<T: Read>(reader: &mut T) -> Result<Vec<NetCDFAttribute>, NetCDF
     }
 }
 
-fn read_var_list<T: Read>(reader: &mut T) -> Result<Vec<NetCDFVariable>, NetCDFError> {
+fn read_var_list<T: Read>(reader: &mut T, version: &NetCDFVersion) -> Result<Vec<NetCDFVariable>, NetCDFError> {
     let mut result = Vec::new();
+    let mut buffer1: FourBytes = [0; 4];
+    let mut buffer2: FourBytes = [0; 4];
+    reader.read_exact(&mut buffer1)?;
+    reader.read_exact(&mut buffer2)?;
+    debug!("Varlist buffer1: {:?}", buffer1);
+    debug!("Varlist buffer2: {:?}", buffer2);
 
-    // TODO: implement
+    match (buffer1, buffer2) {
+        (ZERO, ZERO) => {
+            // No attributes given, return empty vector
+            Ok(result)
+        }
+        (NC_VARIABLE, _) => {
+            let nelem = u32::from_be_bytes(buffer2);
+            debug!("Nelems varlist BE: {}", nelem);
 
-    Ok(result)
+            for _ in 0..nelem {
+                let attribute = read_variable(reader, version)?;
+                result.push(attribute);
+            }
+
+            Ok(result)
+        }
+        _ => {
+            Err(NetCDFError::AttrListTag((buffer1, buffer2)))
+        }
+    }
 }
 
 fn read_data<T: Read>(reader: &mut T) -> Result<Vec<NetCDFData>, NetCDFError> {
@@ -469,4 +498,46 @@ fn read_attribute<T: Read>(reader: &mut T) -> Result<NetCDFAttribute, NetCDFErro
     let values = read_values(reader, &nc_type, nvals)?;
     let result = NetCDFAttribute{name, nc_type, values};
     Ok(result)
+}
+
+fn read_variable<T: Read>(reader: &mut T, version: &NetCDFVersion) -> Result<NetCDFVariable, NetCDFError> {
+    let name = read_name(reader)?;
+    let dimid = read_dimension_ids(reader)?;
+    let att_list = read_att_list(reader)?;
+    let nc_type = read_nc_type(reader)?;
+    let vsize = read_number_of_elements(reader)?;
+    let offset = read_offset(reader, version)?;
+    let result = NetCDFVariable{name, dimid, att_list, nc_type, vsize, offset};
+    Ok(result)
+}
+
+fn read_dimension_ids<T: Read>(reader: &mut T) -> Result<Vec<u32>, NetCDFError> {
+    let mut result = Vec::new();
+    let mut buffer: FourBytes = [0; 4];
+    let nelems = read_number_of_elements(reader)?;
+
+    for _ in 0..nelems {
+        reader.read_exact(&mut buffer)?;
+        let dim_id = u32::from_be_bytes(buffer);
+        result.push(dim_id);
+    }
+
+    Ok(result)
+}
+
+fn read_offset<T: Read>(reader: &mut T, version: &NetCDFVersion) -> Result<NetCDFOffset, NetCDFError> {
+    match version {
+        NetCDFVersion::CDF01 => {
+            let mut buffer: FourBytes = [0; 4];
+            reader.read_exact(&mut buffer)?;
+            let offset = u32::from_be_bytes(buffer);
+            Ok(NetCDFOffset::Pos32(offset))
+        }
+        NetCDFVersion::CDF02 => {
+            let mut buffer: EightBytes = [0; 8];
+            reader.read_exact(&mut buffer)?;
+            let offset = u64::from_be_bytes(buffer);
+            Ok(NetCDFOffset::Pos64(offset))
+        }
+    }
 }
