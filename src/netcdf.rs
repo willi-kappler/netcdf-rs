@@ -32,18 +32,22 @@ pub const NC_FLOAT: FourBytes = [0x00, 0x00, 0x00, 0x05];
 pub const NC_DOUBLE: FourBytes = [0x00, 0x00, 0x00, 0x06];
 
 pub struct NetCDF {
+    pub header: NetCDFHeader,
+    pub data: NetCDFData,
+}
+
+pub struct NetCDFHeader {
     pub version: NetCDFVersion,
     pub numrecs: NetCDFStreaming,
     pub dim_list: Vec<NetCDFDimension>,
     pub att_list: Vec<NetCDFAttribute>,
     pub var_list: Vec<NetCDFVariable>,
-    pub data: NetCDFData,
 }
 
 impl Display for NetCDF {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(formatter, "Version: {:x?}", self.version)?;
-        write!(formatter, "Number of records: {:?}", self.numrecs)
+        write!(formatter, "Version: {:x?}", self.header.version)?;
+        write!(formatter, "Number of records: {:?}", self.header.numrecs)
     }
 }
 

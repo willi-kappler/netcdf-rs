@@ -23,6 +23,13 @@ pub fn load_file<T: AsRef<Path>>(path: T) -> Result<NetCDF, NetCDFError> {
 }
 
 pub fn load_reader<T: Read>(reader: &mut T) -> Result<NetCDF, NetCDFError> {
+    let header = read_header(reader)?;
+    let data = read_data(reader)?;
+
+    Ok(NetCDF{header, data})
+}
+
+fn read_header<T: Read>(reader: &mut T) -> Result<NetCDFHeader, NetCDFError> {
     let version = read_version(reader)?;
     info!("NetCDF version: {:?}", version);
 
@@ -32,9 +39,8 @@ pub fn load_reader<T: Read>(reader: &mut T) -> Result<NetCDF, NetCDFError> {
     let dim_list = read_dim_list(reader)?;
     let att_list = read_att_list(reader)?;
     let var_list = read_var_list(reader, &version)?;
-    let data = read_data(reader)?;
 
-    Ok(NetCDF{version, numrecs, dim_list, att_list, var_list, data})
+    Ok(NetCDFHeader{version, numrecs, dim_list, att_list, var_list})
 }
 
 fn read_version<T: Read>(reader: &mut T) -> Result<NetCDFVersion, NetCDFError> {
