@@ -17,6 +17,7 @@ use crate::netcdf::*;
 
 pub fn load_file<T: AsRef<Path>>(path: T) -> Result<NetCDF, NetCDFError> {
     let file_path = path.as_ref();
+    info!("reader.rs, load_file, tryingo to open file: '{}'", file_path.display());
     let file = File::open(file_path)?;
     let mut buf_reader = BufReader::new(file);
     load_reader(&mut buf_reader)
