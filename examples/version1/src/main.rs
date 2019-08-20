@@ -20,7 +20,7 @@ fn main() {
 
 
 
-    match NetCDF::load("version1.nc") {
+    match load_file("version1.nc") {
         Err(e) => {
             error!("An error occurred: {}", e);
         }
@@ -29,5 +29,4 @@ fn main() {
             info!("NetCDF info: {}", net_cdf);
         }
     }
-
 }
