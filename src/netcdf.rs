@@ -46,8 +46,11 @@ pub struct NetCDFHeader {
 
 impl Display for NetCDF {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> Result<(), fmt::Error> {
-        write!(formatter, "Version: {:x?}", self.header.version)?;
-        write!(formatter, "Number of records: {:?}", self.header.numrecs)
+        write!(formatter, "Version: {:x?}\n", self.header.version)?;
+        write!(formatter, "Number of records: {:?}\n", self.header.numrecs)?;
+        write!(formatter, "Number of dimensions: {}\n", self.header.dim_list.len())?;
+        write!(formatter, "Number of attributes: {}\n", self.header.att_list.len())?;
+        write!(formatter, "Number of variables: {}\n", self.header.var_list.len())
     }
 }
 
