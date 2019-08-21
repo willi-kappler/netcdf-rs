@@ -25,7 +25,7 @@ pub fn load_file<T: AsRef<Path>>(path: T) -> Result<NetCDF, NetCDFError> {
 
 pub fn load_reader<T: Read>(reader: &mut T) -> Result<NetCDF, NetCDFError> {
     let header = read_header(reader)?;
-    let data = read_data(reader)?;
+    let data = read_data(reader, &header)?;
 
     Ok(NetCDF{header, data})
 }
@@ -34,14 +34,19 @@ fn read_header<T: Read>(reader: &mut T) -> Result<NetCDFHeader, NetCDFError> {
     let version = read_version(reader)?;
     info!("NetCDF version: {:?}", version);
 
-    let numrecs = read_numrecs(reader)?;
-    info!("NetCDF number of records: {:?}", numrecs);
+    match version {
+        NetCDFVersion::HDF5 => Err(NetCDFError::HDF5NotSupportetYet),
+        _ => {
+            let numrecs = read_numrecs(reader)?;
+            info!("NetCDF number of records: {:?}", numrecs);
 
-    let dim_list = read_dim_list(reader)?;
-    let att_list = read_att_list(reader)?;
-    let var_list = read_var_list(reader, &version)?;
+            let dim_list = read_dim_list(reader)?;
+            let att_list = read_att_list(reader)?;
+            let var_list = read_var_list(reader, &version)?;
 
-    Ok(NetCDFHeader{version, numrecs, dim_list, att_list, var_list})
+            Ok(NetCDFHeader{version, numrecs, dim_list, att_list, var_list})
+        }
+    }
 }
 
 fn read_version<T: Read>(reader: &mut T) -> Result<NetCDFVersion, NetCDFError> {
@@ -52,6 +57,7 @@ fn read_version<T: Read>(reader: &mut T) -> Result<NetCDFVersion, NetCDFError> {
     match buffer {
         VERSION1 => Ok(NetCDFVersion::CDF01),
         VERSION2 => Ok(NetCDFVersion::CDF02),
+        VERSION4 => Ok(NetCDFVersion::HDF5),
         _ => Err(NetCDFError::UnknownVersion(buffer))
     }
 }
@@ -169,7 +175,7 @@ fn read_var_list<T: Read>(reader: &mut T, version: &NetCDFVersion) -> Result<Vec
     }
 }
 
-fn read_data<T: Read>(reader: &mut T) -> Result<NetCDFData, NetCDFError> {
+fn read_data<T: Read>(reader: &mut T, header: &NetCDFHeader) -> Result<NetCDFData, NetCDFError> {
     let non_recs = read_non_records(reader)?;
     let recs = read_records(reader)?;
 
@@ -344,6 +350,7 @@ fn read_offset<T: Read>(reader: &mut T, version: &NetCDFVersion) -> Result<NetCD
             let offset = u64::from_be_bytes(buffer);
             Ok(NetCDFOffset::Pos64(offset))
         }
+        _ => Err(NetCDFError::UnknownOffsetVersion)
     }
 }
 

@@ -19,6 +19,7 @@ pub const STREAMING: FourBytes = [0xff, 0xff, 0xff, 0xff];
 pub const ZERO: FourBytes = [0x00, 0x00, 0x00, 0x00];
 pub const VERSION1: FourBytes = [0x43, 0x44, 0x46, 0x01];
 pub const VERSION2: FourBytes = [0x43, 0x44, 0x46, 0x02];
+pub const VERSION4: FourBytes = [0x89, 0x48, 0x44, 0x46]; // HDF 5, TODO
 
 pub const NC_DIMENSION: FourBytes = [0x00, 0x00, 0x00, 0x0a];
 pub const NC_VARIABLE: FourBytes = [0x00, 0x00, 0x00, 0x0b];
@@ -58,6 +59,7 @@ impl Display for NetCDF {
 pub enum NetCDFVersion {
     CDF01,
     CDF02,
+    HDF5,
 }
 
 #[derive(Debug)]
@@ -144,6 +146,8 @@ pub enum NetCDFError {
     DimListTag((FourBytes, FourBytes)),
     AttrListTag((FourBytes, FourBytes)),
     NCType(FourBytes),
+    HDF5NotSupportetYet,
+    UnknownOffsetVersion,
 }
 
 
@@ -181,6 +185,12 @@ impl Display for NetCDFError {
             }
             NetCDFError::NCType(t) => {
                 write!(formatter, "Unknown NetCDF type: {:x?}", t)
+            }
+            NetCDFError::HDF5NotSupportetYet => {
+                write!(formatter, "Version 4 with HDF5 is not supported yet")
+            }
+            NetCDFError::UnknownOffsetVersion => {
+                write!(formatter, "The offset version is not known, must be old format version 1 or 2")
             }
         }
     }
