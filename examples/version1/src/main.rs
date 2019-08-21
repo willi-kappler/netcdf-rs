@@ -30,6 +30,15 @@ fn main() {
         }
     }
 
+    match load_file("netcdf_files/small1.nc") {
+        Err(e) => {
+            error!("An error occurred: {}", e);
+        }
+        Ok(net_cdf) => {
+            info!("File OK!");
+            info!("NetCDF info:\n{}", net_cdf);
+        }
+    }
 
 
 }
