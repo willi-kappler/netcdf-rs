@@ -70,7 +70,7 @@ pub(crate) enum NetCDFStreaming {
 }
 
 #[derive(Debug)]
-pub(crate) enum NetCDFType {
+pub enum NetCDFType {
     NCByte,
     NCChar,
     NCShort,
@@ -90,23 +90,24 @@ pub enum NetCDFValue {
 }
 
 #[derive(Debug)]
-pub(crate) struct NetCDFDimension {
-    pub(crate) name: String,
-    pub(crate) dim_length: u32,
+pub struct NetCDFDimension {
+    pub name: String,
+    pub length: u32,
 }
 
 #[derive(Debug)]
-pub(crate) struct NetCDFAttribute {
-    pub(crate) name: String,
-    pub(crate) values: Vec<NetCDFValue>,
+pub struct NetCDFAttribute {
+    pub name: String,
+    // TODO: Change from vec of enums to enums of vec
+    pub values: Vec<NetCDFValue>,
 }
 
 #[derive(Debug)]
-pub(crate) struct NetCDFVariable {
-    pub(crate) name: String,
-    pub(crate) dimid: Vec<u32>,
-    pub(crate) att_list: Vec<NetCDFAttribute>,
-    pub(crate) nc_type: NetCDFType,
+pub struct NetCDFVariable {
+    pub name: String,
+    pub dimid: Vec<u32>,
+    pub att_list: Vec<NetCDFAttribute>,
+    pub nc_type: NetCDFType,
     pub(crate) vsize: u32,
     pub(crate) offset: NetCDFOffset,
 }
@@ -216,4 +217,19 @@ impl NetCDF {
         self.header.var_list.len() as u32
     }
 
+    pub fn list_of_dimensions2(&self) -> Vec<(&str, u32)> {
+        self.header.dim_list.iter().map(|d| (d.name.as_ref(), d.length)).collect::<Vec<(&str, u32)>>()
+    }
+
+    pub fn list_of_dimensions(&self) -> &[NetCDFDimension] {
+        self.header.dim_list.as_slice()
+    }
+
+    pub fn list_of_attributes(&self) -> &[NetCDFAttribute] {
+        self.header.att_list.as_slice()
+    }
+
+    pub fn list_of_variables(&self) -> &[NetCDFVariable] {
+        self.header.var_list.as_slice()
+    }
 }

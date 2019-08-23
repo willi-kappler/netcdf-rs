@@ -300,8 +300,8 @@ fn read_values<T: Read>(reader: &mut T, nc_type: NetCDFType, nvals: u32) -> Resu
 
 fn read_dimension<T: Read>(reader: &mut T) -> Result<NetCDFDimension, NetCDFError> {
     let name = read_name(reader)?;
-    let dim_length = read_number_of_elements(reader)?;
-    Ok(NetCDFDimension{name, dim_length})
+    let length = read_number_of_elements(reader)?;
+    Ok(NetCDFDimension{name, length})
 }
 
 fn read_attribute<T: Read>(reader: &mut T) -> Result<NetCDFAttribute, NetCDFError> {
