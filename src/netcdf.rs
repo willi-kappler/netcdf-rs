@@ -217,10 +217,6 @@ impl NetCDF {
         self.header.var_list.len() as u32
     }
 
-    pub fn list_of_dimensions2(&self) -> Vec<(&str, u32)> {
-        self.header.dim_list.iter().map(|d| (d.name.as_ref(), d.length)).collect::<Vec<(&str, u32)>>()
-    }
-
     pub fn list_of_dimensions(&self) -> &[NetCDFDimension] {
         self.header.dim_list.as_slice()
     }
