@@ -17,7 +17,7 @@ use crate::netcdf::*;
 
 pub fn load_file<T: AsRef<Path>>(path: T) -> Result<NetCDF, NetCDFError> {
     let file_path = path.as_ref();
-    info!("reader.rs, load_file, tryingo to open file: '{}'", file_path.display());
+    info!("reader.rs, load_file, trying to open file: '{}'", file_path.display());
     let file = File::open(file_path)?;
     let mut buf_reader = BufReader::new(file);
     load_reader(&mut buf_reader)
@@ -183,13 +183,25 @@ fn read_data<T: Read>(reader: &mut T, header: &NetCDFHeader) -> Result<NetCDFDat
 }
 
 fn read_name<T: Read>(reader: &mut T) -> Result<String, NetCDFError> {
-    let mut buffer1: FourBytes = [0; 4];
-    reader.read_exact(&mut buffer1)?;
-    let name_length = u32::from_be_bytes(buffer1);
+    let mut buffer1: OneByte = [0; 1];
+
+    let name_length = read_number_of_elements(reader)?;
+    debug!("read_name length: {}", name_length);
 
     let reader2 = reader.by_ref();
     let mut buffer2 = Vec::new();
     reader2.take(name_length as u64).read_to_end(&mut buffer2)?;
+    debug!("read_name buffer2: {:?}", buffer2);
+
+    let padding = 4 - (name_length % 4);
+    debug!("read_name, padding: {}", padding);
+    if padding < 4 {
+        for _ in 0..padding {
+            // Ignore padding fill bytes
+            reader.read_exact(&mut buffer1)?;
+        }
+    }
+
     String::from_utf8(buffer2).map_err(|e| NetCDFError::FromUtf8(e))
 }
 
@@ -202,6 +214,7 @@ fn read_number_of_elements<T: Read>(reader: &mut T) -> Result<u32, NetCDFError> 
 fn read_nc_type<T: Read>(reader: &mut T) -> Result<NetCDFType, NetCDFError> {
     let mut buffer: FourBytes = [0; 4];
     reader.read_exact(&mut buffer)?;
+    debug!("read_nc_type buffer: {:?}", buffer);
 
     match buffer {
         NC_BYTE => Ok(NetCDFType::NCByte),
@@ -220,7 +233,8 @@ fn read_values<T: Read>(reader: &mut T, nc_type: NetCDFType, nvals: u32) -> Resu
     match nc_type {
         NetCDFType::NCByte => {
             let size_in_bytes = nvals;
-            let padding = size_in_bytes % 4;
+            let padding = 4 - (size_in_bytes % 4);
+            debug!("read_values, byte, padding: {}", padding);
 
             let mut buffer: OneByte = [0; 1];
 
@@ -229,14 +243,17 @@ fn read_values<T: Read>(reader: &mut T, nc_type: NetCDFType, nvals: u32) -> Resu
                 result.push(NetCDFValue::Byte(buffer[0]))
             }
 
-            for _ in 0..padding {
-                // Ignore padding fill bytes
-                reader.read_exact(&mut buffer)?;
+            if padding < 4 {
+                for _ in 0..padding {
+                    // Ignore padding fill bytes
+                    reader.read_exact(&mut buffer)?;
+                }
             }
         }
         NetCDFType::NCChar => {
             let size_in_bytes = nvals;
-            let padding = size_in_bytes % 4;
+            let padding = 4 - (size_in_bytes % 4);
+            debug!("read_values, char, padding: {}", padding);
 
             let mut buffer: OneByte = [0; 1];
 
@@ -245,14 +262,17 @@ fn read_values<T: Read>(reader: &mut T, nc_type: NetCDFType, nvals: u32) -> Resu
                 result.push(NetCDFValue::Char(buffer[0] as char))
             }
 
-            for _ in 0..padding {
-                // Ignore padding fill bytes
-                reader.read_exact(&mut buffer)?;
+            if padding < 4 {
+                for _ in 0..padding {
+                    // Ignore padding fill bytes
+                    reader.read_exact(&mut buffer)?;
+                }
             }
         }
         NetCDFType::NCShort => {
             let size_in_bytes = nvals * 2;
-            let padding = size_in_bytes % 4;
+            let padding = 4 - (size_in_bytes % 4);
+            debug!("read_values, short, padding: {}", padding);
 
             let mut buffer: TwoBytes = [0; 2];
 
@@ -300,25 +320,34 @@ fn read_values<T: Read>(reader: &mut T, nc_type: NetCDFType, nvals: u32) -> Resu
 
 fn read_dimension<T: Read>(reader: &mut T) -> Result<NetCDFDimension, NetCDFError> {
     let name = read_name(reader)?;
+    debug!("read_dimension, name: '{}'", name);
     let length = read_number_of_elements(reader)?;
+    debug!("read_dimension, length: {}", length);
     Ok(NetCDFDimension{name, length})
 }
 
 fn read_attribute<T: Read>(reader: &mut T) -> Result<NetCDFAttribute, NetCDFError> {
     let name = read_name(reader)?;
+    debug!("read_attribute, name: '{}'", name);
     let nc_type = read_nc_type(reader)?;
+    debug!("read_attribute, nc_type: {:?}", nc_type);
     let nvals = read_number_of_elements(reader)?;
+    debug!("read_attribute, nvals: {}", nvals);
     let values = read_values(reader, nc_type, nvals)?;
     Ok(NetCDFAttribute{name, values})
 }
 
 fn read_variable<T: Read>(reader: &mut T, version: &NetCDFVersion) -> Result<NetCDFVariable, NetCDFError> {
     let name = read_name(reader)?;
+    debug!("read_variable, name: '{}'", name);
     let dimid = read_dimension_ids(reader)?;
     let att_list = read_att_list(reader)?;
     let nc_type = read_nc_type(reader)?;
+    debug!("read_variable, nc_type: {:?}", nc_type);
     let vsize = read_number_of_elements(reader)?;
+    debug!("read_variable, vsize: {}", vsize);
     let offset = read_offset(reader, version)?;
+    debug!("read_variable, offset: {:?}", offset);
     Ok(NetCDFVariable{name, dimid, att_list, nc_type, vsize, offset})
 }
 
@@ -326,6 +355,7 @@ fn read_dimension_ids<T: Read>(reader: &mut T) -> Result<Vec<u32>, NetCDFError> 
     let mut result = Vec::new();
     let mut buffer: FourBytes = [0; 4];
     let nelems = read_number_of_elements(reader)?;
+    debug!("read_dimension_ids, nelems: {}", nelems);
 
     for _ in 0..nelems {
         reader.read_exact(&mut buffer)?;
