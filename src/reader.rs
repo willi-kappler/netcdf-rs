@@ -214,7 +214,7 @@ fn read_nc_type<T: Read>(reader: &mut T) -> Result<NetCDFType, NetCDFError> {
     }
 }
 
-fn read_values<T: Read>(reader: &mut T, nc_type: &NetCDFType, nvals: u32) -> Result<Vec<NetCDFValue>, NetCDFError> {
+fn read_values<T: Read>(reader: &mut T, nc_type: NetCDFType, nvals: u32) -> Result<Vec<NetCDFValue>, NetCDFError> {
     let mut result = Vec::new();
 
     match nc_type {
@@ -308,8 +308,8 @@ fn read_attribute<T: Read>(reader: &mut T) -> Result<NetCDFAttribute, NetCDFErro
     let name = read_name(reader)?;
     let nc_type = read_nc_type(reader)?;
     let nvals = read_number_of_elements(reader)?;
-    let values = read_values(reader, &nc_type, nvals)?;
-    Ok(NetCDFAttribute{name, nc_type, values})
+    let values = read_values(reader, nc_type, nvals)?;
+    Ok(NetCDFAttribute{name, values})
 }
 
 fn read_variable<T: Read>(reader: &mut T, version: &NetCDFVersion) -> Result<NetCDFVariable, NetCDFError> {

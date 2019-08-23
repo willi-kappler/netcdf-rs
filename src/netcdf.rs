@@ -98,7 +98,6 @@ pub(crate) struct NetCDFDimension {
 #[derive(Debug)]
 pub(crate) struct NetCDFAttribute {
     pub(crate) name: String,
-    pub(crate) nc_type: NetCDFType,
     pub(crate) values: Vec<NetCDFValue>,
 }
 
